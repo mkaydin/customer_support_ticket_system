@@ -1,0 +1,310 @@
+﻿@page
+@model LLMInferenceService.DashboardModel
+
+@{
+    ViewData["Title"] = "Customer Support Dashboard";
+}
+
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">Customer Support Dashboard</h4>
+                    <button id="refresh-btn" class="btn btn-light btn-sm">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <h5>Problem Categories Overview</h5>
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div>
+                                    <span class="badge bg-danger me-2">Open Issues: <span id="total-open-issues">--</span></span>
+                                    <span class="badge bg-primary">Total Issues: <span id="total-issues">--</span></span>
+                                </div>
+                                <div class="form-inline">
+                                    <label for="category-filter" class="me-2">Filter by Category:</label>
+                                    <select id="category-filter" class="form-select form-select-sm" style="width: auto;">
+                                        <option value="">All Categories</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-hover" id="problems-stats-table">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Category</th>
+                                            <th>Total Issues</th>
+                                            <th>Open Issues</th>
+                                            <th>% of Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Stats will be loaded here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-12">
+                            <h5>Recent Customer Problems</h5>
+                            <div class="table-responsive">
+                                <table class="table table-striped" id="recent-problems-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Category</th>
+                                            <th>Customer Message</th>
+                                            <th>Created</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Recent problems will be loaded here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <nav>
+                                <ul class="pagination justify-content-center" id="pagination">
+                                    <!-- Pagination will be generated here -->
+                                </ul>
+                            </nav>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for viewing full customer message -->
+<div class="modal fade" id="messageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Customer Message</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="full-message-text"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        $(document).ready(function() {
+            const refreshBtn = document.getElementById('refresh-btn');
+            const categoryFilter = document.getElementById('category-filter');
+            const statsTable = document.getElementById('problems-stats-table').querySelector('tbody');
+            const recentProblemsTable = document.getElementById('recent-problems-table').querySelector('tbody');
+            const pagination = document.getElementById('pagination');
+            const totalIssuesSpan = document.getElementById('total-issues');
+            const totalOpenIssuesSpan = document.getElementById('total-open-issues');
+            
+            let currentPage = 1;
+            const itemsPerPage = 10;
+            let allProblems = [];
+            let problemStats = [];
+            
+            // Initial load
+            loadDashboardData();
+            
+            // Refresh button click
+            refreshBtn.addEventListener('click', loadDashboardData);
+            
+            // Category filter change
+            categoryFilter.addEventListener('change', filterProblems);
+            
+            function loadDashboardData() {
+                // Load problem statistics
+                fetch('/api/inference/problems/stats')
+                    .then(response => response.json())
+                    .then(data => {
+                        problemStats = data;
+                        renderProblemStats(data);
+                        updateCategoryFilter(data);
+                    })
+                    .catch(error => console.error('Error loading stats:', error));
+                
+                // Load recent problems
+                fetch('/api/inference/problems/recent?limit=100') // Get more to handle pagination client-side
+                    .then(response => response.json())
+                    .then(data => {
+                        allProblems = data;
+                        renderRecentProblems(data);
+                    })
+                    .catch(error => console.error('Error loading recent problems:', error));
+            }
+            
+            function renderProblemStats(stats) {
+                statsTable.innerHTML = '';
+                
+                let totalIssues = 0;
+                let totalOpenIssues = 0;
+                
+                stats.forEach(stat => {
+                    totalIssues += stat.count;
+                    totalOpenIssues += stat.openIssues;
+                });
+                
+                totalIssuesSpan.textContent = totalIssues;
+                totalOpenIssuesSpan.textContent = totalOpenIssues;
+                
+                stats.forEach(stat => {
+                    const percentageOfTotal = ((stat.count / totalIssues) * 100).toFixed(1);
+                    
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${stat.category}</td>
+                        <td>${stat.count}</td>
+                        <td>${stat.openIssues}</td>
+                        <td>${percentageOfTotal}%</td>
+                    `;
+                    
+                    statsTable.appendChild(row);
+                });
+            }
+            
+            function updateCategoryFilter(stats) {
+                // Save current selection
+                const currentValue = categoryFilter.value;
+                
+                // Clear existing options except the first one
+                while (categoryFilter.options.length > 1) {
+                    categoryFilter.remove(1);
+                }
+                
+                // Add all categories from stats
+                stats.forEach(stat => {
+                    const option = document.createElement('option');
+                    option.value = stat.category;
+                    option.textContent = `${stat.category} (${stat.count})`;
+                    categoryFilter.appendChild(option);
+                });
+                
+                // Restore selection if possible
+                if (currentValue) {
+                    categoryFilter.value = currentValue;
+                }
+            }
+            
+            function filterProblems() {
+                const selectedCategory = categoryFilter.value;
+                let filteredProblems = allProblems;
+                
+                if (selectedCategory) {
+                    filteredProblems = allProblems.filter(problem => problem.problemCategory === selectedCategory);
+                }
+                
+                renderRecentProblems(filteredProblems);
+            }
+            
+            function renderRecentProblems(problems) {
+                // Calculate pagination
+                const totalPages = Math.ceil(problems.length / itemsPerPage);
+                if (currentPage > totalPages) currentPage = 1;
+                
+                const startIndex = (currentPage - 1) * itemsPerPage;
+                const endIndex = Math.min(startIndex + itemsPerPage, problems.length);
+                const currentPageProblems = problems.slice(startIndex, endIndex);
+                
+                // Render problems
+                recentProblemsTable.innerHTML = '';
+                
+                if (currentPageProblems.length === 0) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td colspan="6" class="text-center">No problems found</td>`;
+                    recentProblemsTable.appendChild(row);
+                } else {
+                    currentPageProblems.forEach(problem => {
+                        const row = document.createElement('tr');
+                        
+                        // Truncate message for display
+                        const truncatedMessage = problem.customerMessage.length > 50 ? 
+                            problem.customerMessage.substring(0, 50) + '...' : 
+                            problem.customerMessage;
+                        
+                        // Format date
+                        const createdDate = new Date(problem.createdAt).toLocaleString();
+                        
+                        row.innerHTML = `
+                            <td>${problem.id}</td>
+                            <td><span class="badge bg-secondary">${problem.problemCategory}</span></td>
+                            <td>${truncatedMessage}</td>
+                            <td>${createdDate}</td>
+                            <td><span class="badge ${problem.status === 'Open' ? 'bg-danger' : 'bg-success'}">${problem.status}</span></td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary view-message" data-message="${encodeURIComponent(problem.customerMessage)}">
+                                    View
+                                </button>
+                            </td>
+                        `;
+                        
+                        recentProblemsTable.appendChild(row);
+                    });
+                    
+                    // Add event listeners for view buttons
+                    document.querySelectorAll('.view-message').forEach(button => {
+                        button.addEventListener('click', function() {
+                            const message = decodeURIComponent(this.getAttribute('data-message'));
+                            document.getElementById('full-message-text').textContent = message;
+                            new bootstrap.Modal(document.getElementById('messageModal')).show();
+                        });
+                    });
+                }
+                
+                // Render pagination
+                renderPagination(totalPages);
+            }
+            
+            function renderPagination(totalPages) {
+                pagination.innerHTML = '';
+                
+                if (totalPages <= 1) return;
+                
+                // Previous button
+                const prevLi = document.createElement('li');
+                prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
+                prevLi.innerHTML = `<a class="page-link" href="#" data-page="${currentPage - 1}">Previous</a>`;
+                pagination.appendChild(prevLi);
+                
+                // Page numbers
+                for (let i = 1; i <= totalPages; i++) {
+                    const li = document.createElement('li');
+                    li.className = `page-item ${i === currentPage ? 'active' : ''}`;
+                    li.innerHTML = `<a class="page-link" href="#" data-page="${i}">${i}</a>`;
+                    pagination.appendChild(li);
+                }
+                
+                // Next button
+                const nextLi = document.createElement('li');
+                nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
+                nextLi.innerHTML = `<a class="page-link" href="#" data-page="${currentPage + 1}">Next</a>`;
+                pagination.appendChild(nextLi);
+                
+                // Add event listeners to pagination links
+                document.querySelectorAll('.page-link').forEach(link => {
+                    link.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const pageNum = parseInt(this.getAttribute('data-page'));
+                        if (pageNum >= 1 && pageNum <= totalPages) {
+                            currentPage = pageNum;
+                            filterProblems(); // Re-filter with new page
+                        }
+                    });
+                });
+            }
+        });
+    </script>
+}

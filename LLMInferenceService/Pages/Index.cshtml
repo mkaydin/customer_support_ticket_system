@@ -1,0 +1,203 @@
+﻿@page
+@model LLMInferenceService.IndexModel
+
+@{
+    ViewData["Title"] = "Customer Support Chat";
+}
+
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">Customer Support</h4>
+                </div>
+                <div class="card-body">
+                    <div id="chat-messages" class="chat-container mb-3" style="height: 400px; overflow-y: auto;">
+                        <div class="chat-message assistant-message">
+                            <div class="message-content">
+                                Hello! I'm your customer service assistant. How can I help you today?
+                            </div>
+                        </div>
+                    </div>
+                    <form id="chat-form">
+                        <div class="input-group">
+                            <textarea id="user-message" class="form-control" rows="2" placeholder="Describe your issue here..." required></textarea>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-send"></i> Send
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-footer text-muted">
+                    <small>Your issue will be categorized and tracked to ensure proper handling. Response times may vary based on complexity.</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            const chatContainer = document.getElementById('chat-messages');
+            const chatForm = document.getElementById('chat-form');
+            const userMessageInput = document.getElementById('user-message');
+            
+            chatForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const userMessage = userMessageInput.value.trim();
+                if (userMessage === '') return;
+                
+                // Add user message to chat
+                addMessageToChat('user', userMessage);
+                userMessageInput.value = '';
+                
+                // Show typing indicator
+                const typingIndicator = document.createElement('div');
+                typingIndicator.className = 'chat-message assistant-message typing-indicator';
+                typingIndicator.innerHTML = '<div class="message-content">Typing...</div>';
+                chatContainer.appendChild(typingIndicator);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                try {
+                    // Send request to backend
+                    const response = await fetch('/api/inference', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            prompt: userMessage
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to get response');
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Remove typing indicator
+                    chatContainer.removeChild(typingIndicator);
+                    
+                    // Add assistant response to chat
+                    addMessageToChat('assistant', data.response);
+                    
+                    // If issue was tracked, show notification
+                    if (data.tracked) {
+                        showNotification(`Your ${data.category} issue has been logged and will be tracked.`);
+                    }
+                    
+                } catch (error) {
+                    console.error('Error:', error);
+                    // Remove typing indicator
+                    chatContainer.removeChild(typingIndicator);
+                    // Add error message
+                    addMessageToChat('assistant', 'Sorry, I encountered an error. Please try again later.');
+                }
+            });
+            
+            function addMessageToChat(role, content) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `chat-message ${role}-message`;
+                
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content';
+                
+                // Process the content for categories and responses
+                if (role === 'assistant') {
+                    const lines = content.split('\n');
+                    lines.forEach(line => {
+                        if (line.startsWith('Category:')) {
+                            const categorySpan = document.createElement('span');
+                            categorySpan.className = 'fw-bold text-primary';
+                            categorySpan.textContent = line;
+                            messageContent.appendChild(categorySpan);
+                        } else if (line.startsWith('Response:')) {
+                            const responseContent = document.createElement('p');
+                            responseContent.className = 'mb-0 mt-2';
+                            responseContent.textContent = line.substring('Response:'.length).trim();
+                            messageContent.appendChild(responseContent);
+                        } else {
+                            const textNode = document.createTextNode(line);
+                            messageContent.appendChild(textNode);
+                        }
+                        messageContent.appendChild(document.createElement('br'));
+                    });
+                } else {
+                    messageContent.textContent = content;
+                }
+                
+                messageDiv.appendChild(messageContent);
+                chatContainer.appendChild(messageDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+            
+            function showNotification(message) {
+                const notification = document.createElement('div');
+                notification.className = 'alert alert-info alert-dismissible fade show';
+                notification.innerHTML = `
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                
+                const notificationContainer = document.createElement('div');
+                notificationContainer.className = 'notification-container position-fixed bottom-0 end-0 p-3';
+                notificationContainer.style.zIndex = '1050';
+                notificationContainer.appendChild(notification);
+                
+                document.body.appendChild(notificationContainer);
+                
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                    setTimeout(() => document.body.removeChild(notificationContainer), 500);
+                }, 5000);
+            }
+        });
+    </script>
+    
+    <style>
+        .chat-container {
+            border: 1px solid #e9ecef;
+            border-radius: 0.25rem;
+            padding: 1rem;
+            background-color: #f8f9fa;
+        }
+        
+        .chat-message {
+            margin-bottom: 1rem;
+            max-width: 80%;
+            clear: both;
+        }
+        
+        .user-message {
+            float: right;
+        }
+        
+        .assistant-message {
+            float: left;
+        }
+        
+        .message-content {
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            display: inline-block;
+        }
+        
+        .user-message .message-content {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        .assistant-message .message-content {
+            background-color: #e9ecef;
+            color: #212529;
+        }
+        
+        .typing-indicator {
+            opacity: 0.7;
+        }
+    </style>
+}
