@@ -7,35 +7,55 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using System.Collections.Generic;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 
 namespace LLMInferenceService;
 
-// IndexModel
-public class IndexModel : PageModel
+// User model for Identity
+public class ApplicationUser : IdentityUser
 {
-    public void OnGet(){}
+    public string FirstName { get; set; }
+    public string LastName { get; set; }
+    public UserRole Role { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsActive { get; set; } = true;
 }
 
-// DashboardModel
-public class DashboardModel : PageModel
+public enum UserRole
 {
-    private readonly AppDbContext _dbcontext;
-
-    public DashboardModel(AppDbContext dbcontext)
-    {
-        _dbcontext = dbcontext;
-    }
-    public void OnGet(){} // page will load data via javascript fetch
+    Admin,
+    Agent,
+    Customer
 }
 
-// add new model for customer problems
-public class CustomerProblem
+public enum TicketStatus
 {
-    public int Id {get; set;}
-    public string CustomerMessage {get; set;}
-    public string ProblemCategory {get; set;}
-    public DateTime CreatedAt {get; set;}
-    public string Status { get; set; } = "Open";
+    Open,
+    InProgress,
+    Solved,
+    Closed
+}
+
+// Enhanced CustomerProblem model (now called Ticket)
+public class Ticket
+{
+    public int Id { get; set; }
+    public string CustomerMessage { get; set; }
+    public string ProblemCategory { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public TicketStatus Status { get; set; } = TicketStatus.Open;
+    public string? AssignedToUserId { get; set; }
+    public ApplicationUser? AssignedToUser { get; set; }
+    public string? AdminNotes { get; set; }
+    public DateTime? SolvedAt { get; set; }
+    public string? SolvedByUserId { get; set; }
+    public ApplicationUser? SolvedByUser { get; set; }
+    public bool RequiresAdminApproval { get; set; } = false;
 }
 
 public class ChatMessage
@@ -45,30 +65,189 @@ public class ChatMessage
     public string Role { get; set; }
     public string Content { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public string? UserId { get; set; }
+    public ApplicationUser? User { get; set; }
+    public string? SessionId { get; set; } // For anonymous users
 }
 
 public class AppDbContext : DbContext
 {
     public DbSet<ChatMessage> ChatMessages { get; set; }
-    public DbSet<CustomerProblem> CustomerProblems { get; set; }
+    public DbSet<Ticket> Tickets { get; set; }
+    public DbSet<ApplicationUser> Users { get; set; }
     
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<ChatMessage>().Property(c => c.Id).ValueGeneratedOnAdd();
+        
+        modelBuilder.Entity<Ticket>()
+            .HasOne(t => t.AssignedToUser)
+            .WithMany()
+            .HasForeignKey(t => t.AssignedToUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+            
+        modelBuilder.Entity<Ticket>()
+            .HasOne(t => t.SolvedByUser)
+            .WithMany()
+            .HasForeignKey(t => t.SolvedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }
 
-public class InferenceRequest
+// DTOs
+public class LoginRequest
 {
-    public string Prompt { get; set; }
+    public string Email { get; set; }
+    public string Password { get; set; }
 }
 
+public class RegisterRequest
+{
+    public string Email { get; set; }
+    public string Password { get; set; }
+    public string FirstName { get; set; }
+    public string LastName { get; set; }
+    public UserRole Role { get; set; } = UserRole.Agent;
+}
+
+public class AssignTicketRequest
+{
+    public int TicketId { get; set; }
+    public string AssignedToUserId { get; set; }
+    public string? AdminNotes { get; set; }
+}
+
+public class UpdateTicketStatusRequest
+{
+    public int TicketId { get; set; }
+    public TicketStatus Status { get; set; }
+    public string? Notes { get; set; }
+}
+
+// Page Models
+public class IndexModel : PageModel
+{
+    public void OnGet() { }
+}
+
+[Authorize(Roles = "Admin,Agent")]
+public class DashboardModel : PageModel
+{
+    private readonly AppDbContext _dbcontext;
+    private readonly UserManager<ApplicationUser> _userManager;
+
+    public DashboardModel(AppDbContext dbcontext, UserManager<ApplicationUser> userManager)
+    {
+        _dbcontext = dbcontext;
+        _userManager = userManager;
+    }
+
+    public void OnGet() { } // page will load data via javascript fetch
+}
+
+// Authentication Controller
+[ApiController]
+[Route("api/auth")]
+public class AuthController : ControllerBase
+{
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly IConfiguration _configuration;
+
+    public AuthController(
+        UserManager<ApplicationUser> userManager,
+        SignInManager<ApplicationUser> signInManager,
+        IConfiguration configuration)
+    {
+        _userManager = userManager;
+        _signInManager = signInManager;
+        _configuration = configuration;
+    }
+
+    [HttpPost("login")]
+    public async Task<IActionResult> Login([FromBody] LoginRequest request)
+    {
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user != null && await _userManager.CheckPasswordAsync(user, request.Password))
+        {
+            if (!user.IsActive)
+            {
+                return Unauthorized(new { message = "Account is deactivated" });
+            }
+
+            var token = await GenerateJwtToken(user);
+            return Ok(new
+            {
+                token,
+                user = new
+                {
+                    id = user.Id,
+                    email = user.Email,
+                    firstName = user.FirstName,
+                    lastName = user.LastName,
+                    role = user.Role.ToString()
+                }
+            });
+        }
+
+        return Unauthorized(new { message = "Invalid credentials" });
+    }
+
+    [HttpPost("register")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+    {
+        var user = new ApplicationUser
+        {
+            Email = request.Email,
+            UserName = request.Email,
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            Role = request.Role
+        };
+
+        var result = await _userManager.CreateAsync(user, request.Password);
+        if (result.Succeeded)
+        {
+            await _userManager.AddToRoleAsync(user, request.Role.ToString());
+            return Ok(new { message = "User created successfully" });
+        }
+
+        return BadRequest(new { errors = result.Errors });
+    }
+
+    private async Task<string> GenerateJwtToken(ApplicationUser user)
+    {
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Id),
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.Role, user.Role.ToString()),
+            new Claim("firstName", user.FirstName),
+            new Claim("lastName", user.LastName)
+        };
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var token = new JwtSecurityToken(
+            issuer: _configuration["Jwt:Issuer"],
+            audience: _configuration["Jwt:Audience"],
+            claims: claims,
+            expires: DateTime.Now.AddDays(1),
+            signingCredentials: creds);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
+
+// Enhanced Inference Controller (Chat can be accessed by anyone)
 [ApiController]
 [Route("api/inference")]
 public class InferenceController : ControllerBase
-{   
+{
     private readonly AppDbContext _dbContext;
     private readonly HttpClient _httpClient = new HttpClient();
     private const string LLM_API_URL = "http://localhost:1234/v1/chat/completions";
@@ -95,18 +274,28 @@ public class InferenceController : ControllerBase
                 response = line.Substring("Response:".Length).Trim();
             }
         }
-        
+
         return (category, response);
     }
-    
+
     [HttpPost]
     public async Task<IActionResult> GenerateText([FromBody] InferenceRequest request)
     {
-        // save user message
-        var userMessage = new ChatMessage { Role = "user", Content = request.Prompt };
+        // Get current user ID if authenticated, otherwise use session ID
+        string? userId = User.Identity.IsAuthenticated ? User.FindFirst(ClaimTypes.NameIdentifier)?.Value : null;
+        string? sessionId = User.Identity.IsAuthenticated ? null : HttpContext.Session.Id;
+
+        // Save user message
+        var userMessage = new ChatMessage 
+        { 
+            Role = "user", 
+            Content = request.Prompt,
+            UserId = userId,
+            SessionId = sessionId
+        };
         _dbContext.ChatMessages.Add(userMessage);
         await _dbContext.SaveChangesAsync();
-        
+
         // System prompt for customer service assistant
         string systemPrompt = @"You are a helpful customer service assistant. Your role is to:
 
@@ -142,7 +331,7 @@ public class InferenceController : ControllerBase
 
 Remember to stay within your role as a customer service assistant and escalate complex issues when necessary.";
 
-        // call llm api
+        // Call LLM API
         var requestBody = new
         {
             model = "llama-3.2-3b-instruct",
@@ -153,7 +342,7 @@ Remember to stay within your role as a customer service assistant and escalate c
             },
             max_tokens = 8192
         };
-        
+
         var jsonRequest = JsonSerializer.Serialize(requestBody);
         var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
 
@@ -166,25 +355,31 @@ Remember to stay within your role as a customer service assistant and escalate c
             var parsedResponse = JsonSerializer.Deserialize<JsonElement>(jsonResponse);
             string? generatedText = parsedResponse.GetProperty("choices")[0].GetProperty("message")
                 .GetProperty("content").GetString();
-            
-            // parse the llm response to extract category and response
+
+            // Parse the LLM response to extract category and response
             var (category, responseText) = await ParseLLMResponse(generatedText);
-            
-            // if a category was identified, save the problem and response
+
+            // If a category was identified, save the problem as a ticket
             if (!string.IsNullOrEmpty(category) && category != "General Inquiries")
             {
-                var customerProblem = new CustomerProblem
+                var ticket = new Ticket
                 {
                     CustomerMessage = request.Prompt,
                     ProblemCategory = category,
                     CreatedAt = DateTime.UtcNow,
-                    Status = "Open"
+                    Status = TicketStatus.Open
                 };
-                _dbContext.CustomerProblems.Add(customerProblem);
+                _dbContext.Tickets.Add(ticket);
             }
-            
-            // save assistant message
-            var assistantMessage = new ChatMessage {Role = "assistant", Content = generatedText};
+
+            // Save assistant message
+            var assistantMessage = new ChatMessage 
+            { 
+                Role = "assistant", 
+                Content = generatedText,
+                UserId = userId,
+                SessionId = sessionId
+            };
             _dbContext.ChatMessages.Add(assistantMessage);
             await _dbContext.SaveChangesAsync();
 
@@ -194,40 +389,225 @@ Remember to stay within your role as a customer service assistant and escalate c
                 category = category,
                 tracked = !string.IsNullOrEmpty(category) && category != "General Inquiries"
             });
-            
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new {error = ex.Message});
+            return StatusCode(500, new { error = ex.Message });
         }
-    }
-    
-    // add endpoint to the problem statistics
-    [HttpGet("problems/stats")]
-    public async Task<IActionResult> GetProblemStats()
-    {
-        var stats = await _dbContext.CustomerProblems
-            .GroupBy(p => p.ProblemCategory)
-            .Select(g => new
-            {
-                Category = g.Key,
-                Count = g.Count(),
-                OpenIssues = g.Count(p => p.Status == "Open")
-            }).ToListAsync();
-
-        return Ok(stats);
-    }
-    
-    // add endpoint to the recent problems
-    [HttpGet("problems/recent")]
-    public async Task<IActionResult> GetRecentProblems([FromQuery] int limit = 10)
-    {
-        var recentProblems = await _dbContext.CustomerProblems
-            .OrderByDescending(p => p.CreatedAt)
-            .Take(limit)
-            .ToListAsync();
-        
-        return Ok(recentProblems);
     }
 }
 
+// Ticket Management Controller
+[ApiController]
+[Route("api/tickets")]
+[Authorize]
+public class TicketController : ControllerBase
+{
+    private readonly AppDbContext _dbContext;
+    private readonly UserManager<ApplicationUser> _userManager;
+
+    public TicketController(AppDbContext dbContext, UserManager<ApplicationUser> userManager)
+    {
+        _dbContext = dbContext;
+        _userManager = userManager;
+    }
+
+    // Get all tickets (Admin only)
+    [HttpGet]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetAllTickets([FromQuery] int skip = 0, [FromQuery] int take = 20)
+    {
+        var tickets = await _dbContext.Tickets
+            .Include(t => t.AssignedToUser)
+            .Include(t => t.SolvedByUser)
+            .OrderByDescending(t => t.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync();
+
+        return Ok(tickets);
+    }
+
+    // Get assigned tickets for current user
+    [HttpGet("assigned")]
+    [Authorize(Roles = "Agent")]
+    public async Task<IActionResult> GetAssignedTickets()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var tickets = await _dbContext.Tickets
+            .Include(t => t.AssignedToUser)
+            .Where(t => t.AssignedToUserId == userId)
+            .OrderByDescending(t => t.CreatedAt)
+            .ToListAsync();
+
+        return Ok(tickets);
+    }
+
+    // Assign ticket to user (Admin only)
+    [HttpPost("assign")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> AssignTicket([FromBody] AssignTicketRequest request)
+    {
+        var ticket = await _dbContext.Tickets.FindAsync(request.TicketId);
+        if (ticket == null)
+        {
+            return NotFound(new { message = "Ticket not found" });
+        }
+
+        var user = await _userManager.FindByIdAsync(request.AssignedToUserId);
+        if (user == null)
+        {
+            return NotFound(new { message = "User not found" });
+        }
+
+        ticket.AssignedToUserId = request.AssignedToUserId;
+        ticket.AdminNotes = request.AdminNotes;
+        ticket.Status = TicketStatus.InProgress;
+
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { message = "Ticket assigned successfully" });
+    }
+
+    // Update ticket status
+    [HttpPut("{id}/status")]
+    public async Task<IActionResult> UpdateTicketStatus(int id, [FromBody] UpdateTicketStatusRequest request)
+    {
+        var ticket = await _dbContext.Tickets.FindAsync(id);
+        if (ticket == null)
+        {
+            return NotFound(new { message = "Ticket not found" });
+        }
+
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
+
+        // Check permissions
+        if (userRole != "Admin" && ticket.AssignedToUserId != userId)
+        {
+            return Forbid("You can only update tickets assigned to you");
+        }
+
+        // If agent is marking as solved, require admin approval
+        if (userRole == "Agent" && request.Status == TicketStatus.Solved)
+        {
+            ticket.Status = TicketStatus.Solved;
+            ticket.SolvedAt = DateTime.UtcNow;
+            ticket.SolvedByUserId = userId;
+            ticket.RequiresAdminApproval = true;
+        }
+        else if (userRole == "Admin")
+        {
+            ticket.Status = request.Status;
+            if (request.Status == TicketStatus.Closed)
+            {
+                ticket.RequiresAdminApproval = false;
+            }
+        }
+
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { message = "Ticket status updated successfully" });
+    }
+
+    // Get tickets requiring admin approval
+    [HttpGet("pending-approval")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetTicketsPendingApproval()
+    {
+        var tickets = await _dbContext.Tickets
+            .Include(t => t.AssignedToUser)
+            .Include(t => t.SolvedByUser)
+            .Where(t => t.RequiresAdminApproval && t.Status == TicketStatus.Solved)
+            .OrderByDescending(t => t.SolvedAt)
+            .ToListAsync();
+
+        return Ok(tickets);
+    }
+
+    // Get ticket statistics
+    [HttpGet("stats")]
+    [Authorize(Roles = "Admin,Agent")]
+    public async Task<IActionResult> GetTicketStats()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
+
+        IQueryable<Ticket> query = _dbContext.Tickets;
+
+        // If not admin, filter by assigned tickets
+        if (userRole != "Admin")
+        {
+            query = query.Where(t => t.AssignedToUserId == userId);
+        }
+
+        var stats = await query
+            .GroupBy(t => t.ProblemCategory)
+            .Select(g => new
+            {
+                Category = g.Key,
+                Total = g.Count(),
+                Open = g.Count(t => t.Status == TicketStatus.Open),
+                InProgress = g.Count(t => t.Status == TicketStatus.InProgress),
+                Solved = g.Count(t => t.Status == TicketStatus.Solved),
+                Closed = g.Count(t => t.Status == TicketStatus.Closed)
+            })
+            .ToListAsync();
+
+        return Ok(stats);
+    }
+}
+
+// User Management Controller
+[ApiController]
+[Route("api/users")]
+[Authorize(Roles = "Admin")]
+public class UserController : ControllerBase
+{
+    private readonly UserManager<ApplicationUser> _userManager;
+
+    public UserController(UserManager<ApplicationUser> userManager)
+    {
+        _userManager = userManager;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetUsers()
+    {
+        var users = await _userManager.Users
+            .Where(u => u.Role != UserRole.Customer)
+            .Select(u => new
+            {
+                u.Id,
+                u.Email,
+                u.FirstName,
+                u.LastName,
+                u.Role,
+                u.IsActive,
+                u.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(users);
+    }
+
+    [HttpPut("{id}/status")]
+    public async Task<IActionResult> UpdateUserStatus(string id, [FromBody] bool isActive)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+        if (user == null)
+        {
+            return NotFound(new { message = "User not found" });
+        }
+
+        user.IsActive = isActive;
+        await _userManager.UpdateAsync(user);
+
+        return Ok(new { message = "User status updated successfully" });
+    }
+}
+
+public class InferenceRequest
+{
+    public string Prompt { get; set; }
+}
