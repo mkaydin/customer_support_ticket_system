@@ -9,8 +9,7 @@ import {
   TicketIcon, 
   Users, 
   LogOut, 
-  Shield,
-  BarChart3
+  Shield
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -48,7 +47,7 @@ const AppContent: React.FC = () => {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => setActiveTab(item.id as any)}
+                      onClick={() => setActiveTab(item.id as never)}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2 ${
                         activeTab === item.id
                           ? 'bg-blue-100 text-blue-700'

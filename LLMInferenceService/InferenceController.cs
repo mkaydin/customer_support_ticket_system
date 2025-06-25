@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 
 namespace LLMInferenceService;
 
@@ -70,7 +71,7 @@ public class ChatMessage
     public string? SessionId { get; set; } // For anonymous users
 }
 
-public class AppDbContext : DbContext
+public class AppDbContext : IdentityDbContext<ApplicationUser>
 {
     public DbSet<ChatMessage> ChatMessages { get; set; }
     public DbSet<Ticket> Tickets { get; set; }
@@ -80,6 +81,8 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
+        
         modelBuilder.Entity<ChatMessage>().Property(c => c.Id).ValueGeneratedOnAdd();
         
         modelBuilder.Entity<Ticket>()
@@ -610,4 +613,90 @@ public class UserController : ControllerBase
 public class InferenceRequest
 {
     public string Prompt { get; set; }
+}
+
+public static class DatabaseSeeder
+{
+    public static async Task SeedUsers(IServiceProvider serviceProvider)
+    {
+        using var scope = serviceProvider.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+
+        // Create Admin user
+        var adminEmail = "admin@company.com";
+        var adminUser = await userManager.FindByEmailAsync(adminEmail);
+        if (adminUser == null)
+        {
+            adminUser = new ApplicationUser
+            {
+                UserName = adminEmail,
+                Email = adminEmail,
+                FirstName = "Admin",
+                LastName = "User",
+                Role = UserRole.Admin,
+                EmailConfirmed = true,
+                IsActive = true
+            };
+            
+            await userManager.CreateAsync(adminUser, "Admin123!"); // Password: Admin123!
+        }
+
+        // Create Agent users
+        var agents = new[]
+        {
+            new { Email = "john.smith@company.com", FirstName = "John", LastName = "Smith", Password = "Agent123!" },
+            new { Email = "sarah.johnson@company.com", FirstName = "Sarah", LastName = "Johnson", Password = "Agent123!" },
+            new { Email = "mike.davis@company.com", FirstName = "Mike", LastName = "Davis", Password = "Agent123!" }
+        };
+
+        foreach (var agent in agents)
+        {
+            var existingUser = await userManager.FindByEmailAsync(agent.Email);
+            if (existingUser == null)
+            {
+                var user = new ApplicationUser
+                {
+                    UserName = agent.Email,
+                    Email = agent.Email,
+                    FirstName = agent.FirstName,
+                    LastName = agent.LastName,
+                    Role = UserRole.Agent,
+                    EmailConfirmed = true,
+                    IsActive = true
+                };
+                
+                await userManager.CreateAsync(user, agent.Password);
+            }
+        }
+
+        // Create Customer users
+        var customers = new[]
+        {
+            new { Email = "alice.brown@email.com", FirstName = "Alice", LastName = "Brown", Password = "Customer123!" },
+            new { Email = "bob.wilson@email.com", FirstName = "Bob", LastName = "Wilson", Password = "Customer123!" },
+            new { Email = "carol.taylor@email.com", FirstName = "Carol", LastName = "Taylor", Password = "Customer123!" },
+            new { Email = "david.garcia@email.com", FirstName = "David", LastName = "Garcia", Password = "Customer123!" },
+            new { Email = "emma.martinez@email.com", FirstName = "Emma", LastName = "Martinez", Password = "Customer123!" }
+        };
+
+        foreach (var customer in customers)
+        {
+            var existingUser = await userManager.FindByEmailAsync(customer.Email);
+            if (existingUser == null)
+            {
+                var user = new ApplicationUser
+                {
+                    UserName = customer.Email,
+                    Email = customer.Email,
+                    FirstName = customer.FirstName,
+                    LastName = customer.LastName,
+                    Role = UserRole.Customer,
+                    EmailConfirmed = true,
+                    IsActive = true
+                };
+                
+                await userManager.CreateAsync(user, customer.Password);
+            }
+        }
+    }
 }

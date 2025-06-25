@@ -139,3 +139,16 @@
 /home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/obj/Debug/net9.0/LLMInferenceService.pdb
 /home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/obj/Debug/net9.0/LLMInferenceService.genruntimeconfig.cache
 /home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/obj/Debug/net9.0/ref/LLMInferenceService.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.AspNetCore.Authentication.JwtBearer.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.AspNetCore.Cryptography.Internal.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.AspNetCore.Cryptography.KeyDerivation.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.AspNetCore.Identity.EntityFrameworkCore.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.Extensions.Identity.Core.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.Extensions.Identity.Stores.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.IdentityModel.Abstractions.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.IdentityModel.JsonWebTokens.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.IdentityModel.Logging.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.IdentityModel.Protocols.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/Microsoft.IdentityModel.Tokens.dll
+/home/mka/Code/repos/customer_support_ticket_system/LLMInferenceService/bin/Debug/net9.0/System.IdentityModel.Tokens.Jwt.dll
