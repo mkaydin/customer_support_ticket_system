@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LLMInferenceService")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+87f9afde8cc8c4c5a490fffb5bcad129ce8bce89")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6d040dc80f8a65f2c24d48797485b7ea701ce57d")]
 [assembly: System.Reflection.AssemblyProductAttribute("LLMInferenceService")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LLMInferenceService")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
