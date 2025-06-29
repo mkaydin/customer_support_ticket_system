@@ -77,15 +77,29 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AgentOrAdmin", policy => policy.RequireRole("Agent", "Admin"));
 });
 
-// Add CORS
+// FIXED: Add CORS with proper configuration for Cloudflare tunnel
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy =>
+    options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "http://localhost:5173", "http://localhost:5174")
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        policy.AllowAnyOrigin()  // Allow any origin for Cloudflare tunnel
+        .AllowAnyHeader()
+        .AllowAnyMethod();
+        // Note: Can't use AllowCredentials() with AllowAnyOrigin()
+    });
+
+    // Alternative: If you need credentials, specify exact origins
+    options.AddPolicy("AllowSpecificOrigins", policy =>
+    {
+        policy.WithOrigins(
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "https://your-cloudflare-domain.com"  // Add your Cloudflare tunnel domain here
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 
@@ -121,7 +135,7 @@ app.UseStaticFiles();
 app.UseRouting();
 
 // CRITICAL: CORS must come before Authentication
-app.UseCors();
+app.UseCors("AllowAll");  // Now this policy exists!
 
 // CRITICAL: Authentication/Authorization order matters
 app.UseAuthentication();
