@@ -95,7 +95,7 @@ builder.Services.AddCors(options =>
             "http://localhost:3000",
             "http://localhost:5173",
             "http://localhost:5174",
-            "https://your-cloudflare-domain.com"  // Add your Cloudflare tunnel domain here
+            "https://songs-distribution-olympics-bat.trycloudflare.com"  // Add your Cloudflare tunnel domain here
         )
         .AllowAnyHeader()
         .AllowAnyMethod()
