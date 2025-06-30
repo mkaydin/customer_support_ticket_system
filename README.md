@@ -3,6 +3,18 @@
 A full-stack, AI-powered customer support ticketing platform that leverages Large Language Models (LLMs) for automated issue categorization, empathetic response generation, and streamlined support workflows. The system features a robust ASP.NET Core backend and a modern React + TypeScript frontend.
 
 ![Login Screenshot](repo_images/0.png)
+---
+![Chat Screenshot](repo_images/1.png)
+---
+![Chat2 Screenshot](repo_images/2.png)
+---
+![Tickets Screenshot](repo_images/3.png)
+---
+![Assign Screenshot](repo_images/4.png)
+---
+![Users Screenshot](repo_images/5.png)
+---
+![AddUser Screenshot](repo_images/6.png)
 
 ---
 
