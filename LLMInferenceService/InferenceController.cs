@@ -200,26 +200,86 @@ public class AuthController : ControllerBase
 
     [HttpPost("register")]
     [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+{
+    try
     {
+        // Validate the request
+        if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Password))
+        {
+            return BadRequest(new { message = "Email and password are required" });
+        }
+
+        // Check if user already exists
+        var existingUser = await _userManager.FindByEmailAsync(request.Email);
+        if (existingUser != null)
+        {
+            return BadRequest(new { message = "User with this email already exists" });
+        }
+
+        // Parse role from request - handle both string and enum
+        UserRole userRole;
+        if (request.Role == UserRole.Admin || request.Role == UserRole.Agent || request.Role == UserRole.Customer)
+        {
+            userRole = request.Role;
+        }
+        else
+        {
+            // Default to Agent if invalid role
+            userRole = UserRole.Agent;
+        }
+
         var user = new ApplicationUser
         {
             Email = request.Email,
             UserName = request.Email,
             FirstName = request.FirstName,
             LastName = request.LastName,
-            Role = request.Role
+            Role = userRole,
+            EmailConfirmed = true, // Auto-confirm for admin-created users
+            IsActive = true
         };
 
         var result = await _userManager.CreateAsync(user, request.Password);
+        
         if (result.Succeeded)
         {
-            await _userManager.AddToRoleAsync(user, request.Role.ToString());
-            return Ok(new { message = "User created successfully" });
+            // Add user to Identity role for authorization
+            var roleResult = await _userManager.AddToRoleAsync(user, userRole.ToString());
+            
+            if (!roleResult.Succeeded)
+            {
+                // Log role assignment failure but don't fail the entire operation
+                // The user will still be created but might have auth issues
+                Console.WriteLine($"Warning: Failed to assign role {userRole} to user {user.Email}");
+            }
+
+            return Ok(new { 
+                message = "User created successfully",
+                user = new {
+                    id = user.Id,
+                    email = user.Email,
+                    firstName = user.FirstName,
+                    lastName = user.LastName,
+                    role = user.Role.ToString()
+                }
+            });
         }
 
-        return BadRequest(new { errors = result.Errors });
+        // Return detailed error information
+        var errors = result.Errors.Select(e => e.Description).ToList();
+        return BadRequest(new { 
+            message = "User creation failed", 
+            errors = errors 
+        });
     }
+    catch (Exception ex)
+    {
+        // Log the exception (in production, use proper logging)
+        Console.WriteLine($"Error creating user: {ex.Message}");
+        return StatusCode(500, new { message = "Internal server error occurred while creating user" });
+    }
+}
 
     private async Task<string> GenerateJwtToken(ApplicationUser user)
     {

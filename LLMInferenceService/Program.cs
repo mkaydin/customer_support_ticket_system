@@ -154,6 +154,7 @@ using (var scope = app.Services.CreateScope())
 {
     try
     {
+        await CreateRoles(app.Services);
         await DatabaseSeeder.SeedUsers(scope.ServiceProvider);
     }
     catch (Exception ex)
@@ -164,3 +165,21 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+static async Task CreateRoles(IServiceProvider serviceProvider)
+{
+    using var scope = serviceProvider.CreateScope();
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    
+    string[] roleNames = { "Admin", "Agent", "Customer" };
+    
+    foreach (var roleName in roleNames)
+    {
+        var roleExist = await roleManager.RoleExistsAsync(roleName);
+        if (!roleExist)
+        {
+            await roleManager.CreateAsync(new IdentityRole(roleName));
+            Console.WriteLine($"Created role: {roleName}");
+        }
+    }
+}

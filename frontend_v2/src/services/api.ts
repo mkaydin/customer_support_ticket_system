@@ -113,16 +113,62 @@ class ApiService {
     }
   }
 
-  async register(userData: RegisterRequest): Promise<{ message: string }> {
-    console.log('👤 Attempting user registration');
-
-    const response = await fetch(`${API_BASE}/auth/register`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(userData),
+  async register(userData: RegisterRequest): Promise<{ message: string; user?: any }> {
+    console.log('👤 Attempting user registration with data:', {
+      email: userData.email,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      role: userData.role
     });
 
-    return this.handleResponse(response);
+    if (!this.token) {
+      throw new Error('Authentication required to register users');
+    }
+
+    // Convert role string to enum integer value for .NET
+    const roleMap: { [key: string]: number } = {
+      'Admin': 0,
+      'Agent': 1,
+      'Customer': 2
+    };
+
+    // Prepare the request body with proper enum conversion
+    const requestBody = {
+      email: userData.email,
+      password: userData.password,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      role: roleMap[userData.role] !== undefined ? roleMap[userData.role] : 1 // Default to Agent (1)
+    };
+
+    console.log('🔍 Sending registration request body:', {
+      ...requestBody,
+      password: '[HIDDEN]' // Don't log password
+    });
+
+    try {
+      const response = await fetch(`${API_BASE}/auth/register`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+                                   body: JSON.stringify(requestBody),
+      });
+
+      console.log('📡 Register response status:', response.status);
+
+      const result = await this.handleResponse<{ message: string; user?: any; errors?: string[] }>(response);
+
+      if (result.errors && result.errors.length > 0) {
+        console.error('❌ Registration errors:', result.errors);
+        throw new Error(result.errors.join(', '));
+      }
+
+      console.log('✅ User registration successful:', result);
+      return result;
+
+    } catch (error) {
+      console.error('❌ Registration failed:', error);
+      throw error;
+    }
   }
 
   logout(): void {
