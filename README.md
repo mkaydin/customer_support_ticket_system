@@ -207,5 +207,3 @@ For production use, review and update security, error handling, and compliance a
 
 ---
 
-**Tip:**  
-Add project badges, screenshots, or a demo GIF for even more professional appeal!
