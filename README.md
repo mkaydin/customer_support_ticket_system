@@ -1,7 +1,5 @@
 
 ---
-
-```markdown
 # Customer Support Ticket System v0.4 🚀
 
 A lightweight, extensible customer support ticketing system built with [Your Tech Stack, e.g. Python/Node.js + Express + MongoDB]. Designed to streamline ticket creation, assignment, tracking, and resolution workflows.
