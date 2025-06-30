@@ -32,7 +32,7 @@ A lightweight, extensible customer support ticketing system built with [Your Tec
    git clone https://github.com/mkaydin/customer_support_ticket_system.git
    cd customer_support_ticket_system
    git checkout v0.4
-```
+   ```
 
 2. **Install dependencies**
     
